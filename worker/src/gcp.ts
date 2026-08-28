@@ -18,13 +18,19 @@ import {
   providerProvisioningCleanupClaim,
 } from "./provider-provisioning";
 import { leaseProviderName } from "./slug";
-import type { Env, ProviderImage, ProviderMachine, ProvisioningAttempt } from "./types";
+import type {
+  Env,
+  ProviderImage,
+  ProviderMachine,
+  ProvisioningAttempt,
+} from "./types";
 
 const computeBaseURL = "https://compute.googleapis.com/compute/v1";
 const tokenURL = "https://oauth2.googleapis.com/token";
 const metadataTokenURL =
   "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
-const defaultImage = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64";
+const defaultImage =
+  "projects/ubuntu-os-cloud/global/images/family/ubuntu-2604-lts-amd64";
 const firewallName = "crabbox-ssh";
 const firewallVisibilityBackoffMs = [100, 200, 400, 800, 1_600, 3_200];
 const metadataTokenBackoffMs = [1_000, 2_000, 4_000, 8_000, 16_000, 28_000];
@@ -112,12 +118,17 @@ export class GCPClient {
     project?: string,
   ) {
     this.project =
-      project?.trim() || env.CRABBOX_GCP_PROJECT?.trim() || env.GCP_PROJECT_ID?.trim() || "";
+      project?.trim() ||
+      env.CRABBOX_GCP_PROJECT?.trim() ||
+      env.GCP_PROJECT_ID?.trim() ||
+      "";
     this.zone = zone || env.CRABBOX_GCP_ZONE?.trim() || "europe-west2-a";
     this.image = env.CRABBOX_GCP_IMAGE?.trim() || defaultImage;
     this.network = env.CRABBOX_GCP_NETWORK?.trim() || "default";
     this.subnet = env.CRABBOX_GCP_SUBNET?.trim() || "";
-    this.tags = uniqueStrings((env.CRABBOX_GCP_TAGS ?? "crabbox-ssh").split(","));
+    this.tags = uniqueStrings(
+      (env.CRABBOX_GCP_TAGS ?? "crabbox-ssh").split(","),
+    );
     this.sshCIDRs = validatedCIDRs(
       (env.CRABBOX_GCP_SSH_CIDRS ?? "").split(","),
       "CRABBOX_GCP_SSH_CIDRS",
@@ -125,12 +136,20 @@ export class GCPClient {
     if (this.sshCIDRs.length === 0) this.sshCIDRs.push("0.0.0.0/0");
     this.rootGB = numberFromEnv(env.CRABBOX_GCP_ROOT_GB, 400);
     this.serviceAccount = env.CRABBOX_GCP_SERVICE_ACCOUNT?.trim() || "";
-    if (!this.project) throw new Error("GCP_PROJECT_ID or CRABBOX_GCP_PROJECT secret is required");
+    if (!this.project)
+      throw new Error(
+        "GCP_PROJECT_ID or CRABBOX_GCP_PROJECT secret is required",
+      );
     if (hasPartialServiceAccountCredential(env)) {
-      throw new Error("GCP_CLIENT_EMAIL and GCP_PRIVATE_KEY must be configured together");
+      throw new Error(
+        "GCP_CLIENT_EMAIL and GCP_PRIVATE_KEY must be configured together",
+      );
     }
     const credentialSource = gcpCredentialSource(env);
-    if (credentialSource === "service-account-key" && !hasServiceAccountCredential(env)) {
+    if (
+      credentialSource === "service-account-key" &&
+      !hasServiceAccountCredential(env)
+    ) {
       throw new Error(
         "GCP_CLIENT_EMAIL and GCP_PRIVATE_KEY are required unless CRABBOX_GCP_CREDENTIAL_SOURCE=metadata",
       );
@@ -168,7 +187,9 @@ export class GCPClient {
       // Pre-upgrade fallback attempts may have created the canonical instance
       // before the selected zone was persisted on the lease.
       const matches = (await this.listCrabboxServers()).filter(
-        (candidate) => candidate.name === expectedName && candidate.labels["lease"] === leaseID,
+        (candidate) =>
+          candidate.name === expectedName &&
+          candidate.labels["lease"] === leaseID,
       );
       if (matches.length > 1) {
         throw new Error(
@@ -191,7 +212,9 @@ export class GCPClient {
     leaseID: string,
     slug: string,
     owner: string,
-    provisioning?: { onTargetAttempt?: (target: { region?: string }) => Promise<void> },
+    provisioning?: {
+      onTargetAttempt?: (target: { region?: string }) => Promise<void>;
+    },
   ): Promise<{
     server: ProviderMachine;
     serverType: string;
@@ -201,7 +224,9 @@ export class GCPClient {
     const candidates = gcpProvisioningCandidatesForConfig(config);
     const zones = prependUnique(
       config.gcpZone || this.zone,
-      config.capacityAvailabilityZones.length > 0 ? config.capacityAvailabilityZones : [this.zone],
+      config.capacityAvailabilityZones.length > 0
+        ? config.capacityAvailabilityZones
+        : [this.zone],
     );
     const failures: string[] = [];
     const attempts: ProvisioningAttempt[] = [];
@@ -228,7 +253,11 @@ export class GCPClient {
             serverType: string;
             market?: string;
             attempts?: ProvisioningAttempt[];
-          } = { server, serverType: machineType, market: config.capacityMarket };
+          } = {
+            server,
+            serverType: machineType,
+            market: config.capacityMarket,
+          };
           if (attempts.length > 0) result.attempts = attempts;
           return result;
         } catch (error) {
@@ -239,7 +268,9 @@ export class GCPClient {
             region: zone,
             serverType: machineType,
             market: config.capacityMarket,
-            category: isFallbackProvisioningError(message) ? "capacity" : "fatal",
+            category: isFallbackProvisioningError(message)
+              ? "capacity"
+              : "fatal",
             message,
           });
           if (!isFallbackProvisioningError(message)) {
@@ -248,7 +279,10 @@ export class GCPClient {
         }
       }
     }
-    if (config.capacityMarket === "spot" && config.capacityFallback.startsWith("on-demand")) {
+    if (
+      config.capacityMarket === "spot" &&
+      config.capacityFallback.startsWith("on-demand")
+    ) {
       for (const zone of zones) {
         const client =
           zone === this.zone && project === this.project
@@ -316,14 +350,19 @@ export class GCPClient {
       metadata: {
         items: [
           { key: "enable-oslogin", value: "FALSE" },
-          { key: "ssh-keys", value: `${config.sshUser}:${config.sshPublicKey}` },
+          {
+            key: "ssh-keys",
+            value: `${config.sshUser}:${config.sshPublicKey}`,
+          },
           { key: "user-data", value: cloudInit(config) },
         ],
       },
       networkInterfaces: [
         {
           network: this.networkSelfLink(config),
-          ...(this.subnetSelfLink(config) ? { subnetwork: this.subnetSelfLink(config) } : {}),
+          ...(this.subnetSelfLink(config)
+            ? { subnetwork: this.subnetSelfLink(config) }
+            : {}),
           accessConfigs: [{ name: "External NAT", type: "ONE_TO_ONE_NAT" }],
         },
       ],
@@ -345,7 +384,7 @@ export class GCPClient {
           type: "PERSISTENT",
           initializeParams: {
             ...initializeParams,
-            diskType: `zones/${this.zone}/diskTypes/pd-balanced`,
+            diskType: `zones/${this.zone}/diskTypes/${gcpBootDiskType(config.serverType)}`,
           },
         },
       ];
@@ -404,14 +443,19 @@ export class GCPClient {
         gcpProviderLabelValue,
       )
     ) {
-      throw new Error(`GCP instance ${name} ownership does not match lease ${leaseID}`);
+      throw new Error(
+        `GCP instance ${name} ownership does not match lease ${leaseID}`,
+      );
     }
     await this.deleteServer(name);
   }
 
   async getServer(name: string): Promise<ProviderMachine> {
     return toMachine(
-      await this.gcp<GCPInstance>("GET", `/zones/${this.zone}/instances/${name}`),
+      await this.gcp<GCPInstance>(
+        "GET",
+        `/zones/${this.zone}/instances/${name}`,
+      ),
       this.zone,
     );
   }
@@ -420,7 +464,8 @@ export class GCPClient {
     try {
       return await this.getServer(name);
     } catch (error) {
-      if (gcpInstanceNotFound(error, this.project, this.zone, name)) return undefined;
+      if (gcpInstanceNotFound(error, this.project, this.zone, name))
+        return undefined;
       throw error;
     }
   }
@@ -431,7 +476,8 @@ export class GCPClient {
       // oxlint-disable-next-line eslint/no-await-in-loop -- polling waits for eventual public IP.
       const server = await this.getServer(name);
       if (server.host) return server;
-      if (Date.now() > deadline) throw new Error(`timeout waiting for gcp public ip on ${name}`);
+      if (Date.now() > deadline)
+        throw new Error(`timeout waiting for gcp public ip on ${name}`);
       // oxlint-disable-next-line eslint/no-await-in-loop -- polling interval.
       await sleep(5000);
     }
@@ -442,7 +488,8 @@ export class GCPClient {
       "DELETE",
       `/zones/${this.zone}/instances/${name}`,
     ).catch((error) => {
-      if (gcpInstanceNotFound(error, this.project, this.zone, name)) return undefined;
+      if (gcpInstanceNotFound(error, this.project, this.zone, name))
+        return undefined;
       throw error;
     });
     if (op) await this.waitZoneOperation(op);
@@ -452,7 +499,10 @@ export class GCPClient {
     // GCP stores per-instance SSH metadata; nothing global to clean up.
   }
 
-  async createImage(instanceName: string, name: string): Promise<ProviderImage> {
+  async createImage(
+    instanceName: string,
+    name: string,
+  ): Promise<ProviderImage> {
     const op = await this.gcp<GCPOperation>("POST", "/global/machineImages", {
       name,
       sourceInstance: `zones/${this.zone}/instances/${instanceName}`,
@@ -462,7 +512,10 @@ export class GCPClient {
     return await this.getImage(name);
   }
 
-  async createDiskSnapshot(instanceName: string, name: string): Promise<ProviderImage> {
+  async createDiskSnapshot(
+    instanceName: string,
+    name: string,
+  ): Promise<ProviderImage> {
     const instance = await this.gcp<GCPInstance>(
       "GET",
       `/zones/${this.zone}/instances/${instanceName}`,
@@ -491,7 +544,10 @@ export class GCPClient {
       return await this.getDiskSnapshot(name);
     }
     if (kind === "gcp-machine-image") {
-      const image = await this.gcp<GCPMachineImage>("GET", `/global/machineImages/${imageName}`);
+      const image = await this.gcp<GCPMachineImage>(
+        "GET",
+        `/global/machineImages/${imageName}`,
+      );
       return gcpMachineProviderImage(image, imageName, this.zone, this.project);
     }
     const image = await this.gcp<GCPMachineImage>(
@@ -511,12 +567,13 @@ export class GCPClient {
       await this.deleteDiskSnapshot(name);
       return;
     }
-    const op = await this.gcp<GCPOperation>("DELETE", `/global/machineImages/${imageName}`).catch(
-      (error) => {
-        if (isNotFound(error)) return undefined;
-        throw error;
-      },
-    );
+    const op = await this.gcp<GCPOperation>(
+      "DELETE",
+      `/global/machineImages/${imageName}`,
+    ).catch((error) => {
+      if (isNotFound(error)) return undefined;
+      throw error;
+    });
     if (op) {
       await this.waitGlobalOperation(op);
       return;
@@ -538,7 +595,10 @@ export class GCPClient {
 
   private async getDiskSnapshot(name: string): Promise<ProviderImage> {
     const snapshotName = lastPathPart(name);
-    const snapshot = await this.gcp<GCPSnapshot>("GET", `/global/snapshots/${snapshotName}`);
+    const snapshot = await this.gcp<GCPSnapshot>(
+      "GET",
+      `/global/snapshots/${snapshotName}`,
+    );
     return {
       id: snapshot.name ?? snapshotName,
       name: snapshot.name ?? snapshotName,
@@ -547,8 +607,11 @@ export class GCPClient {
       kind: "gcp-disk-snapshot",
       region: this.zone,
       project: this.project,
-      resourceID: snapshot.selfLink ?? gcpSnapshotRef(snapshotName, this.project),
-      snapshots: [snapshot.selfLink ?? gcpSnapshotRef(snapshotName, this.project)],
+      resourceID:
+        snapshot.selfLink ?? gcpSnapshotRef(snapshotName, this.project),
+      snapshots: [
+        snapshot.selfLink ?? gcpSnapshotRef(snapshotName, this.project),
+      ],
     };
   }
 
@@ -557,7 +620,8 @@ export class GCPClient {
   }
 
   async ensureFirewall(config: LeaseConfig): Promise<void> {
-    const sourceRanges = config.gcpSSHCIDRs.length > 0 ? config.gcpSSHCIDRs : this.sshCIDRs;
+    const sourceRanges =
+      config.gcpSSHCIDRs.length > 0 ? config.gcpSSHCIDRs : this.sshCIDRs;
     const targetTags = gcpEffectiveTags(this.tags, config.gcpTags);
     const ports = sshPorts(config);
     const name = gcpFirewallNameForPolicy(
@@ -584,14 +648,24 @@ export class GCPClient {
     });
     if (existing) {
       if (!existing.description?.includes("Crabbox-managed")) {
-        throw new Error(`gcp firewall ${name} exists but is not Crabbox-managed`);
+        throw new Error(
+          `gcp firewall ${name} exists but is not Crabbox-managed`,
+        );
       }
-      const op = await this.gcp<GCPOperation>("PUT", `/global/firewalls/${name}`, firewall);
+      const op = await this.gcp<GCPOperation>(
+        "PUT",
+        `/global/firewalls/${name}`,
+        firewall,
+      );
       await this.waitGlobalOperation(op);
       return;
     }
     try {
-      const op = await this.gcp<GCPOperation>("POST", "/global/firewalls", firewall);
+      const op = await this.gcp<GCPOperation>(
+        "POST",
+        "/global/firewalls",
+        firewall,
+      );
       await this.waitGlobalOperation(op);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -615,7 +689,10 @@ export class GCPClient {
       let raced: { description?: string } | undefined;
       try {
         // oxlint-disable-next-line eslint/no-await-in-loop -- each lookup follows bounded propagation backoff.
-        raced = await this.gcp<{ description?: string }>("GET", `/global/firewalls/${name}`);
+        raced = await this.gcp<{ description?: string }>(
+          "GET",
+          `/global/firewalls/${name}`,
+        );
       } catch (error) {
         if (isNotFound(error)) {
           continue;
@@ -623,19 +700,27 @@ export class GCPClient {
         throw error;
       }
       if (!raced.description?.includes("Crabbox-managed")) {
-        throw new Error(`gcp firewall ${name} exists but is not Crabbox-managed`, {
-          cause: conflictError,
-        });
+        throw new Error(
+          `gcp firewall ${name} exists but is not Crabbox-managed`,
+          {
+            cause: conflictError,
+          },
+        );
       }
       try {
         // A completed update proves the raced insert is visible and the desired policy is effective.
         // oxlint-disable-next-line eslint/no-await-in-loop -- a conflicting insert may still be finishing.
-        const op = await this.gcp<GCPOperation>("PUT", `/global/firewalls/${name}`, firewall);
+        const op = await this.gcp<GCPOperation>(
+          "PUT",
+          `/global/firewalls/${name}`,
+          firewall,
+        );
         // oxlint-disable-next-line eslint/no-await-in-loop -- the raced policy must finish before this caller proceeds.
         await this.waitGlobalOperation(op);
         return;
       } catch (error) {
-        const message = error instanceof Error ? error.message.toLowerCase() : String(error);
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : String(error);
         if (!message.includes("http 409") && !message.includes("http 404")) {
           throw error;
         }
@@ -644,7 +729,11 @@ export class GCPClient {
     throw conflictError;
   }
 
-  private async gcp<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async gcp<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const token = await this.accessToken();
     const init: RequestInit = {
       method,
@@ -654,7 +743,10 @@ export class GCPClient {
       },
     };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const response = await this.fetcher(`${computeBaseURL}/projects/${this.project}${path}`, init);
+    const response = await this.fetcher(
+      `${computeBaseURL}/projects/${this.project}${path}`,
+      init,
+    );
     const text = await response.text();
     if (!response.ok) {
       throw new GCPHTTPError(method, path, response.status, text);
@@ -692,7 +784,10 @@ export class GCPClient {
     if (!response.ok || !data.access_token) {
       throw new Error(`gcp token: ${data.error ?? response.statusText}`);
     }
-    this.cache = { token: data.access_token, expiresAt: now + (data.expires_in ?? 3600) };
+    this.cache = {
+      token: data.access_token,
+      expiresAt: now + (data.expires_in ?? 3600),
+    };
     return data.access_token;
   }
 
@@ -720,7 +815,8 @@ export class GCPClient {
       }
       // Error responses from the metadata server are not guaranteed to be JSON.
       const data = parseMetadataTokenResponse(text);
-      const token = typeof data?.access_token === "string" ? data.access_token.trim() : "";
+      const token =
+        typeof data?.access_token === "string" ? data.access_token.trim() : "";
       if (response.ok && token) {
         const expiresIn =
           typeof data?.expires_in === "number" &&
@@ -739,7 +835,9 @@ export class GCPClient {
           ? data.error.trim()
           : response.statusText.trim();
       lastFailure = !response.ok
-        ? new Error(`gcp metadata token: http ${response.status}${detail ? `: ${detail}` : ""}`)
+        ? new Error(
+            `gcp metadata token: http ${response.status}${detail ? `: ${detail}` : ""}`,
+          )
         : new Error("gcp metadata token: response missing access_token");
       if (metadataTokenRetryStatus(response.status)) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- metadata retries are bounded and sequential.
@@ -760,7 +858,9 @@ export class GCPClient {
   ): Promise<{ response: Response; text: string }> {
     const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      throw new GCPMetadataTokenRequestError("gcp metadata token: deadline exceeded");
+      throw new GCPMetadataTokenRequestError(
+        "gcp metadata token: deadline exceeded",
+      );
     }
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -815,7 +915,10 @@ export class GCPClient {
     if (!op.name) return;
     for (;;) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- operation polling is sequential.
-      const done = await this.gcp<GCPOperation>("POST", `/global/operations/${op.name}/wait`);
+      const done = await this.gcp<GCPOperation>(
+        "POST",
+        `/global/operations/${op.name}/wait`,
+      );
       operationError(done);
       if (operationDone(done)) return;
       // oxlint-disable-next-line eslint/no-await-in-loop -- polling interval.
@@ -825,7 +928,9 @@ export class GCPClient {
 
   private networkSelfLink(config: LeaseConfig): string {
     const network = config.gcpNetwork || this.network;
-    return network.includes("/") ? network : `projects/${this.project}/global/networks/${network}`;
+    return network.includes("/")
+      ? network
+      : `projects/${this.project}/global/networks/${network}`;
   }
 
   private subnetSelfLink(config: LeaseConfig): string {
@@ -850,8 +955,14 @@ export function gcpProvisioningCandidatesForConfig(
     config.target === "linux" && config.architecture === "amd64"
       ? gcpMachineTypeCandidatesForClass(config.class)
       : [];
-  if (profileCandidates.length === 0 && isCanonicalProviderClass(config.class)) {
-    const storedType = concreteStoredServerType(config.serverType, config.class);
+  if (
+    profileCandidates.length === 0 &&
+    isCanonicalProviderClass(config.class)
+  ) {
+    const storedType = concreteStoredServerType(
+      config.serverType,
+      config.class,
+    );
     return storedType ? [storedType] : [];
   }
   if (profileCandidates.length === 0) {
@@ -884,12 +995,19 @@ async function serviceAccountAssertion(env: Env, now: number): Promise<string> {
     false,
     ["sign"],
   );
-  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, utf8(unsigned));
+  const signature = await crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    utf8(unsigned),
+  );
   return `${unsigned}.${base64url(signature)}`;
 }
 
 function pemToArrayBuffer(pem: string): ArrayBuffer {
-  const base64 = pem.replaceAll(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  const base64 = pem.replaceAll(
+    /-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g,
+    "",
+  );
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -899,28 +1017,42 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
 }
 
 function hasServiceAccountCredential(env: Env): boolean {
-  return Boolean(env.GCP_CLIENT_EMAIL?.trim()) && Boolean(env.GCP_PRIVATE_KEY?.trim());
+  return (
+    Boolean(env.GCP_CLIENT_EMAIL?.trim()) &&
+    Boolean(env.GCP_PRIVATE_KEY?.trim())
+  );
 }
 
 function hasPartialServiceAccountCredential(env: Env): boolean {
-  return Boolean(env.GCP_CLIENT_EMAIL?.trim()) !== Boolean(env.GCP_PRIVATE_KEY?.trim());
+  return (
+    Boolean(env.GCP_CLIENT_EMAIL?.trim()) !==
+    Boolean(env.GCP_PRIVATE_KEY?.trim())
+  );
 }
 
 function gcpCredentialSource(env: Env): "metadata" | "service-account-key" {
   const source = env.CRABBOX_GCP_CREDENTIAL_SOURCE?.trim() ?? "";
   if (!source) return "service-account-key";
   if (source === "metadata" || source === "service-account-key") return source;
-  throw new Error("CRABBOX_GCP_CREDENTIAL_SOURCE must be metadata or service-account-key");
+  throw new Error(
+    "CRABBOX_GCP_CREDENTIAL_SOURCE must be metadata or service-account-key",
+  );
 }
 
 function parseMetadataTokenResponse(
   text: string,
-): { access_token?: unknown; expires_in?: unknown; error?: unknown } | undefined {
+):
+  | { access_token?: unknown; expires_in?: unknown; error?: unknown }
+  | undefined {
   if (!text) return undefined;
   try {
     const value = JSON.parse(text) as unknown;
     return value && typeof value === "object"
-      ? (value as { access_token?: unknown; expires_in?: unknown; error?: unknown })
+      ? (value as {
+          access_token?: unknown;
+          expires_in?: unknown;
+          error?: unknown;
+        })
       : undefined;
   } catch {
     return undefined;
@@ -931,7 +1063,10 @@ function metadataTokenRetryStatus(status: number): boolean {
   return status === 429 || status === 499 || (status >= 500 && status <= 599);
 }
 
-async function sleepBeforeMetadataRetry(attempt: number, deadline: number): Promise<boolean> {
+async function sleepBeforeMetadataRetry(
+  attempt: number,
+  deadline: number,
+): Promise<boolean> {
   const delay = metadataTokenBackoffMs[attempt];
   const remaining = deadline - Date.now();
   if (delay === undefined || remaining <= 1) return false;
@@ -970,6 +1105,14 @@ function canonicalGCPMachine(machine: ProviderMachine): boolean {
   );
 }
 
+// C4, C4A, C4D, N4 and newer families only accept Hyperdisk; older families use pd-balanced.
+export function gcpBootDiskType(machineType: string): string {
+  const family = machineType.toLowerCase().split("-")[0] ?? "";
+  return ["c4", "c4a", "c4d", "n4", "c3-hyperdisk", "z3", "x4"].includes(family)
+    ? "hyperdisk-balanced"
+    : "pd-balanced";
+}
+
 export function gcpMaxRunDurationSeconds(ttlSeconds: number): number {
   const min = 30;
   const max = 120 * 24 * 60 * 60;
@@ -983,7 +1126,9 @@ export function gcpMaxRunDurationSeconds(ttlSeconds: number): number {
   return seconds;
 }
 
-export function gcpScheduling(config: LeaseConfig): Record<string, unknown> | undefined {
+export function gcpScheduling(
+  config: LeaseConfig,
+): Record<string, unknown> | undefined {
   const scheduling: Record<string, unknown> = {};
   const seconds = gcpMaxRunDurationSeconds(config.ttlSeconds);
   if (seconds > 0) {
@@ -1001,7 +1146,10 @@ export function gcpScheduling(config: LeaseConfig): Record<string, unknown> | un
 
 function gcpLabels(labels: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(labels).map(([key, value]) => [gcpLabelKey(key), gcpLabelValue(value)]),
+    Object.entries(labels).map(([key, value]) => [
+      gcpLabelKey(key),
+      gcpLabelValue(value),
+    ]),
   );
 }
 
@@ -1056,7 +1204,9 @@ function operationError(op: GCPOperation): void {
   const errors = op.error?.errors ?? [];
   if (errors.length > 0) {
     throw new Error(
-      errors.map((item) => `${item.code ?? "error"}: ${item.message ?? ""}`).join("; "),
+      errors
+        .map((item) => `${item.code ?? "error"}: ${item.message ?? ""}`)
+        .join("; "),
     );
   }
 }
@@ -1069,9 +1219,15 @@ function isNotFound(error: unknown): boolean {
   return errorMessage(error).includes("http 404");
 }
 
-function gcpInstanceNotFound(error: unknown, project: string, zone: string, name: string): boolean {
+function gcpInstanceNotFound(
+  error: unknown,
+  project: string,
+  zone: string,
+  name: string,
+): boolean {
   if (!(error instanceof GCPHTTPError) || error.status !== 404) return false;
-  const resource = `projects/${project}/zones/${zone}/instances/${name}`.toLowerCase();
+  const resource =
+    `projects/${project}/zones/${zone}/instances/${name}`.toLowerCase();
   return error.body.toLowerCase().includes(resource);
 }
 
@@ -1118,7 +1274,9 @@ export function gcpFirewallNameForNetwork(network: string): string {
     .replaceAll(/^-+|-+$/g, "")
     .replaceAll(/-+/g, "-");
   if (!/^[a-z]/.test(suffix)) suffix = `net-${suffix}`;
-  suffix = suffix.slice(0, 63 - `${firewallName}-`.length).replaceAll(/-+$/g, "");
+  suffix = suffix
+    .slice(0, 63 - `${firewallName}-`.length)
+    .replaceAll(/-+$/g, "");
   return `${firewallName}-${suffix || "custom"}`;
 }
 
@@ -1139,13 +1297,20 @@ export function gcpFirewallNameForPolicy(
   return gcpFirewallNameWithSuffix(
     base,
     fnv32Hex(
-      [sourceRanges, targetTags, ports].map((values) => canonicalPolicyPart(values)).join("|"),
+      [sourceRanges, targetTags, ports]
+        .map((values) => canonicalPolicyPart(values))
+        .join("|"),
     ),
   );
 }
 
-export function gcpEffectiveTags(defaultTags: string[], requestTags: string[]): string[] {
-  const tags = uniqueStrings(requestTags.length > 0 ? requestTags : defaultTags);
+export function gcpEffectiveTags(
+  defaultTags: string[],
+  requestTags: string[],
+): string[] {
+  const tags = uniqueStrings(
+    requestTags.length > 0 ? requestTags : defaultTags,
+  );
   return tags.length > 0 ? tags : [firewallName];
 }
 
@@ -1199,7 +1364,10 @@ function base64url(value: string | ArrayBuffer): string {
   const bytes = typeof value === "string" ? utf8(value) : new Uint8Array(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }
 
 function sleep(ms: number): Promise<void> {

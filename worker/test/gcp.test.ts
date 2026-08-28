@@ -6,6 +6,7 @@ import {
   gcpEffectiveTags,
   gcpFirewallNameForPolicy,
   gcpFirewallNameForNetwork,
+  gcpBootDiskType,
   gcpMaxRunDurationSeconds,
   gcpScheduling,
   isFallbackProvisioningError,
@@ -20,7 +21,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function metadataResponse(body: BodyInit | null, init: ResponseInit = {}): Response {
+function metadataResponse(
+  body: BodyInit | null,
+  init: ResponseInit = {},
+): Response {
   const headers = new Headers(init.headers);
   headers.set("Metadata-Flavor", "Google");
   return new Response(body, { ...init, headers });
@@ -43,15 +47,21 @@ describe("gcp provider", () => {
   };
 
   it("waits until operations report DONE", () => {
-    expect(operationDone({ name: "operation-1", status: "RUNNING" })).toBe(false);
-    expect(operationDone({ name: "operation-1", status: "PENDING" })).toBe(false);
+    expect(operationDone({ name: "operation-1", status: "RUNNING" })).toBe(
+      false,
+    );
+    expect(operationDone({ name: "operation-1", status: "PENDING" })).toBe(
+      false,
+    );
     expect(operationDone({ name: "operation-1" })).toBe(false);
     expect(operationDone({ name: "operation-1", status: "DONE" })).toBe(true);
   });
 
   it("prefers per-request project over Worker defaults", () => {
     expect(new GCPClient(env).project).toBe("default-project");
-    expect(new GCPClient(env, undefined, "request-project").project).toBe("request-project");
+    expect(new GCPClient(env, undefined, "request-project").project).toBe(
+      "request-project",
+    );
   });
 
   it("uses the metadata server when service account key credentials are omitted", async () => {
@@ -63,12 +73,23 @@ describe("gcp provider", () => {
       CRABBOX_GCP_CREDENTIAL_SOURCE: "metadata",
     };
     const client = new GCPClient(metadataEnv);
-    const calls: Array<{ url: string; headers: Headers; redirect?: RequestRedirect }> = [];
+    const calls: Array<{
+      url: string;
+      headers: Headers;
+      redirect?: RequestRedirect;
+    }> = [];
     client.fetcher = async (input, init) => {
       const url = String(input);
-      calls.push({ url, headers: new Headers(init?.headers), redirect: init?.redirect });
+      calls.push({
+        url,
+        headers: new Headers(init?.headers),
+        redirect: init?.redirect,
+      });
       if (url.includes("metadata.google.internal")) {
-        return metadataJSON({ access_token: "metadata-token", expires_in: 1200 });
+        return metadataJSON({
+          access_token: "metadata-token",
+          expires_in: 1200,
+        });
       }
       if (url.includes("/aggregated/instances")) {
         return Response.json({ items: {} });
@@ -80,7 +101,9 @@ describe("gcp provider", () => {
     expect(calls[0]?.url).toContain("metadata.google.internal");
     expect(calls[0]?.headers.get("Metadata-Flavor")).toBe("Google");
     expect(calls[0]?.redirect).toBe("error");
-    expect(calls[1]?.headers.get("Authorization")).toBe("Bearer metadata-token");
+    expect(calls[1]?.headers.get("Authorization")).toBe(
+      "Bearer metadata-token",
+    );
   });
 
   it("retries transient metadata token failures", async () => {
@@ -98,15 +121,23 @@ describe("gcp provider", () => {
       if (url.includes("metadata.google.internal")) {
         metadataCalls += 1;
         if (metadataCalls === 1) throw new TypeError("connection refused");
-        if (metadataCalls === 2) return metadataResponse("client closed", { status: 499 });
+        if (metadataCalls === 2)
+          return metadataResponse("client closed", { status: 499 });
         if (metadataCalls === 3)
           return metadataResponse("control plane unavailable", { status: 500 });
-        if (metadataCalls === 4) return metadataResponse("bad gateway", { status: 502 });
-        if (metadataCalls === 5) return metadataResponse("busy", { status: 503 });
-        if (metadataCalls === 6) return metadataResponse("rate limited", { status: 429 });
-        return metadataJSON({ access_token: "metadata-token", expires_in: 1200 });
+        if (metadataCalls === 4)
+          return metadataResponse("bad gateway", { status: 502 });
+        if (metadataCalls === 5)
+          return metadataResponse("busy", { status: 503 });
+        if (metadataCalls === 6)
+          return metadataResponse("rate limited", { status: 429 });
+        return metadataJSON({
+          access_token: "metadata-token",
+          expires_in: 1200,
+        });
       }
-      if (url.includes("/aggregated/instances")) return Response.json({ items: {} });
+      if (url.includes("/aggregated/instances"))
+        return Response.json({ items: {} });
       throw new Error(`unexpected GCP request ${url}`);
     };
 
@@ -125,7 +156,10 @@ describe("gcp provider", () => {
     };
     const client = new GCPClient(metadataEnv);
     client.fetcher = async () =>
-      metadataResponse("service account disabled", { status: 401, statusText: "Unauthorized" });
+      metadataResponse("service account disabled", {
+        status: 401,
+        statusText: "Unauthorized",
+      });
 
     await expect(client.listCrabboxServers()).rejects.toThrow(
       "gcp metadata token: http 401: Unauthorized",
@@ -144,7 +178,10 @@ describe("gcp provider", () => {
     let metadataCalls = 0;
     client.fetcher = async () => {
       metadataCalls += 1;
-      return metadataResponse("busy", { status: 503, statusText: "Service Unavailable" });
+      return metadataResponse("busy", {
+        status: 503,
+        statusText: "Service Unavailable",
+      });
     };
 
     const result = client.listCrabboxServers().then(
@@ -154,7 +191,9 @@ describe("gcp provider", () => {
     await vi.runAllTimersAsync();
     const error = await result;
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("gcp metadata token: http 503: Service Unavailable");
+    expect((error as Error).message).toBe(
+      "gcp metadata token: http 503: Service Unavailable",
+    );
     expect(metadataCalls).toBe(7);
   });
 
@@ -180,7 +219,9 @@ describe("gcp provider", () => {
     await vi.runAllTimersAsync();
     const error = await result;
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("gcp metadata token: request failed: connection refused");
+    expect((error as Error).message).toBe(
+      "gcp metadata token: request failed: connection refused",
+    );
     expect(metadataCalls).toBe(7);
   });
 
@@ -229,7 +270,9 @@ describe("gcp provider", () => {
     await vi.runAllTimersAsync();
     const error = await result;
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("gcp metadata token: request failed: request timed out");
+    expect((error as Error).message).toBe(
+      "gcp metadata token: request failed: request timed out",
+    );
     expect(metadataCalls).toBeGreaterThan(1);
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(60_000);
   });
@@ -266,7 +309,9 @@ describe("gcp provider", () => {
     await vi.runAllTimersAsync();
     const error = await result;
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("gcp metadata token: request failed: request timed out");
+    expect((error as Error).message).toBe(
+      "gcp metadata token: request failed: request timed out",
+    );
     expect(metadataCalls).toBeGreaterThan(1);
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(60_000);
   });
@@ -279,7 +324,9 @@ describe("gcp provider", () => {
       CRABBOX_GCP_CREDENTIAL_SOURCE: "metadata",
     };
     const client = new GCPClient(metadataEnv);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "expiring-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 300,
     };
@@ -290,7 +337,9 @@ describe("gcp provider", () => {
         metadataCalls += 1;
         return metadataJSON({ access_token: "fresh-token", expires_in: 3600 });
       }
-      authorizations.push(new Headers(init?.headers).get("Authorization") ?? "");
+      authorizations.push(
+        new Headers(init?.headers).get("Authorization") ?? "",
+      );
       return Response.json({ items: {} });
     };
 
@@ -301,7 +350,9 @@ describe("gcp provider", () => {
 
   it("keeps service account key tokens until the one-minute cache boundary", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "cached-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 120,
     };
@@ -343,28 +394,40 @@ describe("gcp provider", () => {
 
   it("rejects invalid configured GCP credential sources", () => {
     expect(
-      () => new GCPClient({ ...env, CRABBOX_GCP_CREDENTIAL_SOURCE: "workload-identity" }),
-    ).toThrow("CRABBOX_GCP_CREDENTIAL_SOURCE must be metadata or service-account-key");
+      () =>
+        new GCPClient({
+          ...env,
+          CRABBOX_GCP_CREDENTIAL_SOURCE: "workload-identity",
+        }),
+    ).toThrow(
+      "CRABBOX_GCP_CREDENTIAL_SOURCE must be metadata or service-account-key",
+    );
   });
 
   it("rejects invalid configured GCP SSH CIDRs", () => {
-    expect(() => new GCPClient({ ...env, CRABBOX_GCP_SSH_CIDRS: "::::/128" })).toThrow(
-      "CRABBOX_GCP_SSH_CIDRS entries must be valid",
-    );
+    expect(
+      () => new GCPClient({ ...env, CRABBOX_GCP_SSH_CIDRS: "::::/128" }),
+    ).toThrow("CRABBOX_GCP_SSH_CIDRS entries must be valid");
   });
 
   it("treats only the exact zonal instance as absent", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
     let message =
       "The resource 'projects/default-project/zones/us-central1-a/instances/crabbox-blue-lobster' was not found";
     client.fetcher = async () =>
-      new Response(JSON.stringify({ error: { code: 404, message } }), { status: 404 });
+      new Response(JSON.stringify({ error: { code: 404, message } }), {
+        status: 404,
+      });
 
-    await expect(client.findServer("crabbox-blue-lobster")).resolves.toBeUndefined();
+    await expect(
+      client.findServer("crabbox-blue-lobster"),
+    ).resolves.toBeUndefined();
     message = "The resource 'projects/default-project' was not found";
     await expect(client.findServer("crabbox-blue-lobster")).rejects.toThrow(
       "projects/default-project",
@@ -373,16 +436,22 @@ describe("gcp provider", () => {
 
   it("treats only an exact missing instance DELETE as complete", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
     let message =
       "The resource 'projects/default-project/zones/us-central1-a/instances/crabbox-blue-lobster' was not found";
     client.fetcher = async () =>
-      new Response(JSON.stringify({ error: { code: 404, message } }), { status: 404 });
+      new Response(JSON.stringify({ error: { code: 404, message } }), {
+        status: 404,
+      });
 
-    await expect(client.deleteServer("crabbox-blue-lobster")).resolves.toBeUndefined();
+    await expect(
+      client.deleteServer("crabbox-blue-lobster"),
+    ).resolves.toBeUndefined();
     message = "The resource 'projects/default-project' was not found";
     await expect(client.deleteServer("crabbox-blue-lobster")).rejects.toThrow(
       "projects/default-project",
@@ -443,7 +512,9 @@ describe("gcp provider", () => {
 
   it("recovers when another create wins the shared firewall race", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -466,7 +537,9 @@ describe("gcp provider", () => {
     };
 
     await (
-      client as unknown as { ensureFirewall(config: ReturnType<typeof leaseConfig>): Promise<void> }
+      client as unknown as {
+        ensureFirewall(config: ReturnType<typeof leaseConfig>): Promise<void>;
+      }
     ).ensureFirewall(
       leaseConfig({
         provider: "gcp",
@@ -483,7 +556,9 @@ describe("gcp provider", () => {
   it("waits for a raced firewall insert before reconciling policy", async () => {
     vi.useFakeTimers();
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -508,7 +583,10 @@ describe("gcp provider", () => {
           ? new Response("operation in progress", { status: 409 })
           : Response.json({ name: "op-raced", status: "PENDING" });
       }
-      if (url.pathname.endsWith("/global/operations/op-raced/wait") && method === "POST") {
+      if (
+        url.pathname.endsWith("/global/operations/op-raced/wait") &&
+        method === "POST"
+      ) {
         operationWaits += 1;
         return Response.json({ name: "op-raced", status: "DONE" });
       }
@@ -516,7 +594,9 @@ describe("gcp provider", () => {
     };
 
     const ensure = (
-      client as unknown as { ensureFirewall(config: ReturnType<typeof leaseConfig>): Promise<void> }
+      client as unknown as {
+        ensureFirewall(config: ReturnType<typeof leaseConfig>): Promise<void>;
+      }
     ).ensureFirewall(
       leaseConfig({
         provider: "gcp",
@@ -534,13 +614,17 @@ describe("gcp provider", () => {
 
   it("lists Crabbox machines across aggregated GCP zones", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
     client.fetcher = async (input) => {
       const url = new URL(String(input));
-      expect(url.pathname).toBe("/compute/v1/projects/default-project/aggregated/instances");
+      expect(url.pathname).toBe(
+        "/compute/v1/projects/default-project/aggregated/instances",
+      );
       expect(url.searchParams.get("filter")).toBe("labels.crabbox = true");
       expect(url.searchParams.get("returnPartialSuccess")).toBe("true");
       return Response.json({
@@ -603,7 +687,9 @@ describe("gcp provider", () => {
 
   it("recovers a lease only through its deterministic canonical instance", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -641,7 +727,9 @@ describe("gcp provider", () => {
 
   it("recovers pre-upgrade fallback-zone instances by exact canonical name", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -651,7 +739,9 @@ describe("gcp provider", () => {
       if (url.pathname.endsWith(`/instances/${expectedName}`)) {
         return new Response("not found", { status: 404 });
       }
-      expect(url.pathname).toBe("/compute/v1/projects/default-project/aggregated/instances");
+      expect(url.pathname).toBe(
+        "/compute/v1/projects/default-project/aggregated/instances",
+      );
       return Response.json({
         items: {
           "zones/us-central1-b": {
@@ -685,7 +775,9 @@ describe("gcp provider", () => {
 
   it("rejects ambiguous exact-name fallback-zone recovery", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -727,23 +819,25 @@ describe("gcp provider", () => {
     const client = new GCPClient(env);
     const attemptedZones: string[] = [];
     const createCalls: string[] = [];
-    vi.spyOn(GCPClient.prototype, "createServer").mockImplementation(async (config) => {
-      createCalls.push(config.gcpZone);
-      if (config.gcpZone === "us-central1-a") {
-        throw new Error("ZONE_RESOURCE_POOL_EXHAUSTED");
-      }
-      return {
-        provider: "gcp",
-        id: 1,
-        cloudID: "crabbox-blue-lobster-c80c2195",
-        name: "crabbox-blue-lobster-c80c2195",
-        status: "running",
-        serverType: config.serverType,
-        region: config.gcpZone,
-        host: "192.0.2.10",
-        labels: {},
-      };
-    });
+    vi.spyOn(GCPClient.prototype, "createServer").mockImplementation(
+      async (config) => {
+        createCalls.push(config.gcpZone);
+        if (config.gcpZone === "us-central1-a") {
+          throw new Error("ZONE_RESOURCE_POOL_EXHAUSTED");
+        }
+        return {
+          provider: "gcp",
+          id: 1,
+          cloudID: "crabbox-blue-lobster-c80c2195",
+          name: "crabbox-blue-lobster-c80c2195",
+          status: "running",
+          serverType: config.serverType,
+          region: config.gcpZone,
+          host: "192.0.2.10",
+          labels: {},
+        };
+      },
+    );
 
     await client.createServerWithFallback(
       leaseConfig({
@@ -770,7 +864,9 @@ describe("gcp provider", () => {
 
   it("creates and deletes machine images through Compute Engine", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -778,14 +874,22 @@ describe("gcp provider", () => {
     client.fetcher = async (input, init) => {
       const url = new URL(String(input));
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-      calls.push({ method: init?.method ?? "GET", path: url.pathname + url.search, body });
+      calls.push({
+        method: init?.method ?? "GET",
+        path: url.pathname + url.search,
+        body,
+      });
       if (url.pathname.endsWith("/global/operations/op-1/wait")) {
         return Response.json({ name: "op-1", status: "DONE" });
       }
-      if (url.pathname.endsWith("/global/machineImages/checkpoint-gcp") && init?.method === "GET") {
+      if (
+        url.pathname.endsWith("/global/machineImages/checkpoint-gcp") &&
+        init?.method === "GET"
+      ) {
         return Response.json({
           name: "checkpoint-gcp",
-          selfLink: "projects/default-project/global/machineImages/checkpoint-gcp",
+          selfLink:
+            "projects/default-project/global/machineImages/checkpoint-gcp",
           status: "READY",
         });
       }
@@ -816,18 +920,26 @@ describe("gcp provider", () => {
 
   it("routes kind-specific snapshot reads and deletes to GCP snapshots", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
     const calls: Array<{ method: string; path: string }> = [];
     client.fetcher = async (input, init) => {
       const url = new URL(String(input));
-      calls.push({ method: init?.method ?? "GET", path: url.pathname + url.search });
+      calls.push({
+        method: init?.method ?? "GET",
+        path: url.pathname + url.search,
+      });
       if (url.pathname.endsWith("/global/operations/op-1/wait")) {
         return Response.json({ name: "op-1", status: "DONE" });
       }
-      if (url.pathname.endsWith("/global/snapshots/checkpoint-gcp") && init?.method !== "DELETE") {
+      if (
+        url.pathname.endsWith("/global/snapshots/checkpoint-gcp") &&
+        init?.method !== "DELETE"
+      ) {
         return Response.json({
           name: "checkpoint-gcp",
           selfLink: "projects/default-project/global/snapshots/checkpoint-gcp",
@@ -860,7 +972,9 @@ describe("gcp provider", () => {
 
   it("creates instances from machine images without boot disk initialization", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -876,22 +990,36 @@ describe("gcp provider", () => {
         ? (JSON.parse(String(init.body)) as Record<string, unknown>)
         : undefined;
       calls.push({ method, path: url.pathname + url.search, body });
-      if (url.pathname.endsWith("/global/firewalls/crabbox-ssh") && method === "GET") {
+      if (
+        url.pathname.endsWith("/global/firewalls/crabbox-ssh") &&
+        method === "GET"
+      ) {
         return new Response("not found", { status: 404 });
       }
       if (url.pathname.endsWith("/global/operations/op-firewall/wait")) {
         return Response.json({ name: "op-firewall", status: "DONE" });
       }
-      if (url.pathname.endsWith("/zones/us-central1-a/operations/op-instance/wait")) {
+      if (
+        url.pathname.endsWith(
+          "/zones/us-central1-a/operations/op-instance/wait",
+        )
+      ) {
         return Response.json({ name: "op-instance", status: "DONE" });
       }
       if (url.pathname.endsWith("/global/firewalls") && method === "POST") {
         return Response.json({ name: "op-firewall", status: "PENDING" });
       }
-      if (url.pathname.endsWith("/zones/us-central1-a/instances") && method === "POST") {
+      if (
+        url.pathname.endsWith("/zones/us-central1-a/instances") &&
+        method === "POST"
+      ) {
         return Response.json({ name: "op-instance", status: "PENDING" });
       }
-      if (url.pathname.includes("/zones/us-central1-a/instances/crabbox-blue-lobster-")) {
+      if (
+        url.pathname.includes(
+          "/zones/us-central1-a/instances/crabbox-blue-lobster-",
+        )
+      ) {
         return Response.json({
           id: "123",
           name: url.pathname.split("/").pop(),
@@ -917,7 +1045,9 @@ describe("gcp provider", () => {
     );
 
     const createCall = calls.find(
-      (call) => call.method === "POST" && call.path.includes("/zones/us-central1-a/instances?"),
+      (call) =>
+        call.method === "POST" &&
+        call.path.includes("/zones/us-central1-a/instances?"),
     );
     expect(server.host).toBe("192.0.2.5");
     expect(createCall?.path).toContain(
@@ -965,13 +1095,17 @@ describe("gcp provider", () => {
   it("skips maxRunDuration outside the supported bounds", () => {
     expect(gcpMaxRunDurationSeconds(29)).toBe(0);
     expect(gcpMaxRunDurationSeconds(30)).toBe(30);
-    expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60)).toBe(120 * 24 * 60 * 60);
+    expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60)).toBe(
+      120 * 24 * 60 * 60,
+    );
     expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60 + 1)).toBe(0);
   });
 
   it("creates instances from disk snapshots without forcing default disk size", async () => {
     const client = new GCPClient(env);
-    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+    (
+      client as unknown as { cache: { token: string; expiresAt: number } }
+    ).cache = {
       token: "test-token",
       expiresAt: Math.trunc(Date.now() / 1000) + 3600,
     };
@@ -987,22 +1121,36 @@ describe("gcp provider", () => {
         ? (JSON.parse(String(init.body)) as Record<string, unknown>)
         : undefined;
       calls.push({ method, path: url.pathname + url.search, body });
-      if (url.pathname.endsWith("/global/firewalls/crabbox-ssh") && method === "GET") {
+      if (
+        url.pathname.endsWith("/global/firewalls/crabbox-ssh") &&
+        method === "GET"
+      ) {
         return new Response("not found", { status: 404 });
       }
       if (url.pathname.endsWith("/global/operations/op-firewall/wait")) {
         return Response.json({ name: "op-firewall", status: "DONE" });
       }
-      if (url.pathname.endsWith("/zones/us-central1-a/operations/op-instance/wait")) {
+      if (
+        url.pathname.endsWith(
+          "/zones/us-central1-a/operations/op-instance/wait",
+        )
+      ) {
         return Response.json({ name: "op-instance", status: "DONE" });
       }
       if (url.pathname.endsWith("/global/firewalls") && method === "POST") {
         return Response.json({ name: "op-firewall", status: "PENDING" });
       }
-      if (url.pathname.endsWith("/zones/us-central1-a/instances") && method === "POST") {
+      if (
+        url.pathname.endsWith("/zones/us-central1-a/instances") &&
+        method === "POST"
+      ) {
         return Response.json({ name: "op-instance", status: "PENDING" });
       }
-      if (url.pathname.includes("/zones/us-central1-a/instances/crabbox-blue-lobster-")) {
+      if (
+        url.pathname.includes(
+          "/zones/us-central1-a/instances/crabbox-blue-lobster-",
+        )
+      ) {
         return Response.json({
           id: "123",
           name: url.pathname.split("/").pop(),
@@ -1027,11 +1175,16 @@ describe("gcp provider", () => {
     );
 
     const createCall = calls.find(
-      (call) => call.method === "POST" && call.path.endsWith("/zones/us-central1-a/instances"),
+      (call) =>
+        call.method === "POST" &&
+        call.path.endsWith("/zones/us-central1-a/instances"),
     );
-    const disks = createCall?.body?.disks as Array<{ initializeParams?: Record<string, unknown> }>;
+    const disks = createCall?.body?.disks as Array<{
+      initializeParams?: Record<string, unknown>;
+    }>;
     expect(disks[0]?.initializeParams).toMatchObject({
-      sourceSnapshot: "projects/default-project/global/snapshots/checkpoint-gcp",
+      sourceSnapshot:
+        "projects/default-project/global/snapshots/checkpoint-gcp",
       diskType: "zones/us-central1-a/diskTypes/pd-balanced",
     });
     expect(disks[0]?.initializeParams).not.toHaveProperty("diskSizeGb");
@@ -1040,7 +1193,9 @@ describe("gcp provider", () => {
   it("keeps exact GCP types eligible for zone fallback", async () => {
     const attempts: string[] = [];
     const original = GCPClient.prototype.createServer;
-    GCPClient.prototype.createServer = async function (config): Promise<ProviderMachine> {
+    GCPClient.prototype.createServer = async function (
+      config,
+    ): Promise<ProviderMachine> {
       attempts.push(`${config.gcpZone}/${config.serverType}`);
       if (config.gcpZone === "europe-west2-b") {
         return {
@@ -1074,7 +1229,10 @@ describe("gcp provider", () => {
         "peter@example.com",
       );
       expect(result.server.region).toBe("europe-west2-b");
-      expect(attempts).toEqual(["us-central1-a/c4-standard-32", "europe-west2-b/c4-standard-32"]);
+      expect(attempts).toEqual([
+        "us-central1-a/c4-standard-32",
+        "europe-west2-b/c4-standard-32",
+      ]);
     } finally {
       GCPClient.prototype.createServer = original;
     }
@@ -1082,22 +1240,41 @@ describe("gcp provider", () => {
 
   it("uses network-specific firewall names", () => {
     expect(gcpFirewallNameForNetwork("default")).toBe("crabbox-ssh");
-    expect(gcpFirewallNameForNetwork("projects/p/global/networks/default")).toBe("crabbox-ssh");
-    expect(gcpFirewallNameForNetwork("crabbox-ci")).toBe("crabbox-ssh-crabbox-ci");
-    expect(gcpFirewallNameForNetwork("projects/p/global/networks/123_custom")).toBe(
-      "crabbox-ssh-net-123-custom",
+    expect(
+      gcpFirewallNameForNetwork("projects/p/global/networks/default"),
+    ).toBe("crabbox-ssh");
+    expect(gcpFirewallNameForNetwork("crabbox-ci")).toBe(
+      "crabbox-ssh-crabbox-ci",
     );
+    expect(
+      gcpFirewallNameForNetwork("projects/p/global/networks/123_custom"),
+    ).toBe("crabbox-ssh-net-123-custom");
   });
 
   it("adds an ingress-policy suffix to non-default firewall names", () => {
     expect(
-      gcpFirewallNameForPolicy("default", ["0.0.0.0/0"], ["crabbox-ssh"], ["2222", "22"]),
+      gcpFirewallNameForPolicy(
+        "default",
+        ["0.0.0.0/0"],
+        ["crabbox-ssh"],
+        ["2222", "22"],
+      ),
     ).toBe("crabbox-ssh");
     expect(
-      gcpFirewallNameForPolicy("default", ["198.51.100.7/32"], ["crabbox-ssh"], ["2222", "22"]),
+      gcpFirewallNameForPolicy(
+        "default",
+        ["198.51.100.7/32"],
+        ["crabbox-ssh"],
+        ["2222", "22"],
+      ),
     ).not.toBe("crabbox-ssh");
     expect(
-      gcpFirewallNameForPolicy("crabbox-ci", ["198.51.100.7/32"], ["crabbox-ssh"], ["2222", "22"]),
+      gcpFirewallNameForPolicy(
+        "crabbox-ci",
+        ["198.51.100.7/32"],
+        ["crabbox-ssh"],
+        ["2222", "22"],
+      ),
     ).toMatch(/^crabbox-ssh-crabbox-ci-[0-9a-f]{8}$/);
     expect(
       gcpFirewallNameForPolicy(
@@ -1111,7 +1288,9 @@ describe("gcp provider", () => {
 
   it("replaces default GCP tags when request tags are explicit", () => {
     expect(gcpEffectiveTags(["crabbox-ssh"], [])).toEqual(["crabbox-ssh"]);
-    expect(gcpEffectiveTags(["crabbox-ssh"], ["crabbox-ci", "crabbox-ci"])).toEqual(["crabbox-ci"]);
+    expect(
+      gcpEffectiveTags(["crabbox-ssh"], ["crabbox-ci", "crabbox-ci"]),
+    ).toEqual(["crabbox-ci"]);
     expect(gcpEffectiveTags(["  "], [])).toEqual(["crabbox-ssh"]);
     expect(gcpEffectiveTags(["crabbox-ssh"], ["  "])).toEqual(["crabbox-ssh"]);
   });
@@ -1132,5 +1311,14 @@ describe("gcp provider", () => {
         "gcp POST /zones/us-central1-a/instances: http 400: invalid labels",
       ),
     ).toBe(false);
+  });
+});
+
+describe("gcpBootDiskType", () => {
+  it("uses hyperdisk for C4/N4 and pd-balanced otherwise", () => {
+    expect(gcpBootDiskType("c4-standard-4")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("n4-standard-8")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("c3-standard-8")).toBe("pd-balanced");
+    expect(gcpBootDiskType("n2d-standard-8")).toBe("pd-balanced");
   });
 });

@@ -212,7 +212,7 @@ func (c *GCPClient) createServer(ctx context.Context, cfg Config, publicKey, lea
 			InitializeParams: &computepb.AttachedDiskInitializeParams{
 				SourceImage: proto.String(c.Image),
 				DiskSizeGb:  proto.Int64(c.RootGB),
-				DiskType:    proto.String(fmt.Sprintf("zones/%s/diskTypes/pd-balanced", c.Zone)),
+				DiskType:    proto.String(fmt.Sprintf("zones/%s/diskTypes/%s", c.Zone, gcpBootDiskType(cfg.ServerType))),
 			},
 		}},
 		NetworkInterfaces: []*computepb.NetworkInterface{{
@@ -725,4 +725,15 @@ func uniqueStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+// gcpBootDiskType picks a boot disk type the machine family accepts: C4/C4A/C4D/N4
+// (and other Hyperdisk-only families) reject pd-balanced.
+func gcpBootDiskType(machineType string) string {
+	family, _, _ := strings.Cut(strings.ToLower(machineType), "-")
+	switch family {
+	case "c4", "c4a", "c4d", "n4", "z3", "x4":
+		return "hyperdisk-balanced"
+	}
+	return "pd-balanced"
 }
