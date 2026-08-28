@@ -109,7 +109,7 @@ func (a App) egressHost(ctx context.Context, args []string) error {
 func (a App) egressHostWithConnectHook(ctx context.Context, args []string, onConnected func()) error {
 	defaults := defaultConfig()
 	fs := newFlagSet("egress host", a.Stderr)
-	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner or aws")
+	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, azure, or gcp")
 	id := fs.String("id", "", "lease id or slug")
 	coordinatorURL := fs.String("coordinator", "", "coordinator URL override")
 	ticket := fs.String("ticket", "", "pre-created egress host ticket")
@@ -159,7 +159,7 @@ func (a App) egressClient(ctx context.Context, args []string) error {
 	}
 	defaults := defaultConfig()
 	fs := newFlagSet("egress client", a.Stderr)
-	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner or aws")
+	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, azure, or gcp")
 	id := fs.String("id", "", "lease id or slug")
 	coordinatorURL := fs.String("coordinator", "", "coordinator URL override")
 	ticket := fs.String("ticket", "", "pre-created egress client ticket")
@@ -304,7 +304,7 @@ func completeEgressClientLaunch(cmd *exec.Cmd, input io.WriteCloser, ticket stri
 func (a App) egressStart(ctx context.Context, args []string) error {
 	defaults := defaultConfig()
 	fs := newFlagSet("egress start", a.Stderr)
-	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner or aws")
+	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, azure, or gcp")
 	id := fs.String("id", "", "lease id or slug")
 	profile := fs.String("profile", "", "egress profile name")
 	allowCSV := fs.String("allow", "", "comma-separated allowed host patterns")
@@ -431,7 +431,7 @@ func (a App) prepareEgressClientCutover(ctx context.Context, coord *CoordinatorC
 func (a App) egressStatus(ctx context.Context, args []string) error {
 	defaults := defaultConfig()
 	fs := newFlagSet("egress status", a.Stderr)
-	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner or aws")
+	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, azure, or gcp")
 	id := fs.String("id", "", "lease id or slug")
 	coordinatorURL := fs.String("coordinator", "", "coordinator URL override")
 	if err := parseFlags(fs, args); err != nil {
@@ -463,7 +463,7 @@ func formatEgressStatus(status CoordinatorEgressStatus) string {
 func (a App) egressStop(ctx context.Context, args []string) error {
 	defaults := defaultConfig()
 	fs := newFlagSet("egress stop", a.Stderr)
-	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner or aws")
+	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, azure, or gcp")
 	id := fs.String("id", "", "lease id or slug")
 	targetFlags := registerTargetFlags(fs, defaults)
 	networkFlags := registerNetworkModeFlag(fs, defaults)

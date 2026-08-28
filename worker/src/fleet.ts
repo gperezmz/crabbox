@@ -17812,6 +17812,28 @@ function awsConfiguredImageIdentity(
   return undefined;
 }
 
+// Values are the effective boot source: a lease request field when present,
+// otherwise the coordinator default, so the reported identity matches what the
+// instance actually booted from.
+function gcpLeaseImageIdentity(
+  snapshot: string,
+  machineImage: string,
+  image: string,
+  region: string,
+): LeaseImageIdentity | undefined {
+  const base = { provider: "gcp", region } as const;
+  if (snapshot) {
+    return { ...base, id: snapshot, source: "snapshot", kind: "gcp-disk-snapshot" };
+  }
+  if (machineImage) {
+    return { ...base, id: machineImage, source: "explicit", kind: "gcp-machine-image" };
+  }
+  if (image) {
+    return { ...base, id: image, source: "explicit", kind: "gcp-image" };
+  }
+  return undefined;
+}
+
 function azureLeaseImageIdentity(
   config: LeaseConfig,
   imageID: string,
@@ -23810,8 +23832,19 @@ export class GCPProvider implements CloudProvider {
     serverType: string;
     market?: string;
     attempts?: ProvisioningAttempt[];
+    image?: LeaseImageIdentity;
   }> {
-    return this.client.createServerWithFallback(config, leaseID, slug, owner, provisioning);
+    return this.client
+      .createServerWithFallback(config, leaseID, slug, owner, provisioning)
+      .then((result) => {
+        const image = gcpLeaseImageIdentity(
+          config.gcpSnapshot || this.client.snapshot,
+          config.gcpMachineImage || this.client.machineImage,
+          config.gcpImage || this.client.image,
+          result.server.region || config.gcpZone,
+        );
+        return { ...result, ...(image ? { image } : {}) };
+      });
   }
 
   deleteServer(id: string): Promise<void> {
