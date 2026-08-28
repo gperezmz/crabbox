@@ -43,7 +43,7 @@ func (Provider) Spec() core.ProviderSpec {
 		Targets: []core.TargetSpec{
 			{OS: core.TargetLinux},
 		},
-		Features:         core.FeatureSet{core.FeatureSSH, core.FeatureCrabboxSync, core.FeatureCleanup, core.FeatureTailscale},
+		Features:         core.FeatureSet{core.FeatureSSH, core.FeatureCrabboxSync, core.FeatureCleanup, core.FeatureDesktop, core.FeatureBrowser, core.FeatureCode, core.FeatureTailscale},
 		Coordinator:      core.CoordinatorSupported,
 		ClassDisposition: core.ProviderClassDispositionMapped,
 	}

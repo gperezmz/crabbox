@@ -22,9 +22,9 @@ Use GCP when:
 - you want Linux Compute Engine capacity behind the shared coordinator;
 - you want direct local testing with Google Application Default Credentials.
 
-GCP is Linux-only. For Windows, WSL2, macOS, Linux desktop/browser/code leases,
-or the AMI-style image bake-and-promote workflow, use AWS instead. GCP does
-support [Tailscale](../features/tailscale.md) and native
+GCP is Linux-only. For Windows, WSL2, or macOS leases, or the AMI-style image
+bake-and-promote workflow, use AWS instead. GCP does support Linux
+desktop/browser/code leases, [Tailscale](../features/tailscale.md), and native
 [checkpoints](../features/checkpoints.md) (machine-image and disk-snapshot
 fork/restore) — see below.
 
@@ -110,6 +110,7 @@ GCP_PROJECT_ID
 CRABBOX_GCP_PROJECT
 CRABBOX_GCP_ZONE
 CRABBOX_GCP_IMAGE
+CRABBOX_GCP_MACHINE_IMAGE
 CRABBOX_GCP_NETWORK
 CRABBOX_GCP_SUBNET
 CRABBOX_GCP_TAGS
@@ -372,8 +373,9 @@ described above.
 
 Three independent safety nets enforce expiry:
 
-- Direct GCP VMs set Compute Engine `maxRunDuration` with termination action
-  `DELETE`, so the TTL hard cap is enforced by the platform.
+- GCP VMs set Compute Engine `maxRunDuration` with termination action `DELETE`
+  in both direct and brokered mode, so the TTL hard cap is enforced by the
+  platform.
 - Each VM installs a guest-side `crabbox-gcp-expiry-guard` systemd timer that
   reads live instance labels through the metadata service and Compute API, then
   self-deletes expired non-kept leases when the attached service account can
@@ -394,8 +396,13 @@ Brokered Linux GCP leases support native [checkpoints](../features/checkpoints.m
 recorded project and zone. Native checkpoints require a coordinator and a known
 cloud instance ID; they are not available for direct-only leases.
 
-`crabbox image delete <image-id> --provider gcp` deletes a GCP image. GCP does
-not yet have the AWS-style `image promote` bake pipeline.
+`crabbox image delete <image-id> --provider gcp` deletes a GCP image. GCP has no
+`image promote` catalog. `CRABBOX_GCP_MACHINE_IMAGE` is the coordinator-wide
+equivalent: set it to a machine image captured with `crabbox image create` and
+every brokered GCP lease boots from that capture, exactly as an admin
+`gcp.machineImage` request field does for a single lease. Leases booted this way
+inherit the captured instance's disks, so `rootGB` and boot disk type come from
+the bake rather than the lease request.
 
 ## Troubleshooting
 
@@ -435,10 +442,10 @@ temporary `CRABBOX_CONFIG` without broker settings for direct cleanup.
 
 ## Limitations
 
-- Linux only — no GCP Windows, WSL2, or macOS.
-- No desktop, browser, code-server, or VNC capabilities.
-- No AWS-style image bake-and-promote pipeline (native checkpoints and
-  `image delete` are supported).
+- Linux only — no GCP Windows, WSL2, or macOS. Desktop, browser, and
+  code-server capabilities are Linux-only as a result.
+- No `image promote` catalog; a captured machine image becomes the default
+  through `CRABBOX_GCP_MACHINE_IMAGE`, and such leases inherit the baked disks.
 - No provider pricing lookup yet; cost uses the generic managed-provider fallback
   rate.
 - OS Login must not block metadata SSH keys. Crabbox sets `enable-oslogin=FALSE`

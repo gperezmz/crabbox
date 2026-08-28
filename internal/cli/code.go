@@ -53,7 +53,7 @@ const (
 func (a App) webCode(ctx context.Context, args []string) error {
 	defaults := defaultConfig()
 	fs := newFlagSet("code", a.Stderr)
-	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, or azure")
+	provider := registerProviderSelectionFlag(fs, defaults, "provider: hetzner, aws, azure, or gcp")
 	id := fs.String("id", "", "lease id or slug")
 	reclaim := fs.Bool("reclaim", false, "claim this lease for the current repo")
 	localPort := fs.String("local-port", "", "local code-server tunnel port")
@@ -78,7 +78,7 @@ func (a App) webCode(ctx context.Context, args []string) error {
 		return err
 	}
 	if isBlacksmithProvider(cfg.Provider) || isStaticProvider(cfg.Provider) {
-		return exit(2, "code currently supports coordinator-backed hetzner/aws Linux leases")
+		return exit(2, "code currently supports coordinator-backed hetzner/aws/azure/gcp Linux leases")
 	}
 	coord, useCoordinator, err := newTargetCoordinatorClient(cfg)
 	if err != nil {

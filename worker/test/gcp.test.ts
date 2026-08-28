@@ -6,6 +6,9 @@ import {
   gcpEffectiveTags,
   gcpFirewallNameForPolicy,
   gcpFirewallNameForNetwork,
+  gcpBootDiskType,
+  gcpMaxRunDurationSeconds,
+  gcpScheduling,
   isFallbackProvisioningError,
   operationDone,
 } from "../src/gcp";
@@ -809,6 +812,7 @@ describe("gcp provider", () => {
     expect(calls[0]?.body).toMatchObject({
       name: "checkpoint-gcp",
       sourceInstance: "zones/us-central1-a/instances/crabbox-source",
+      labels: { crabbox: "true", managed_by: "crabbox" },
     });
   });
 
@@ -925,6 +929,100 @@ describe("gcp provider", () => {
     expect(String(createCall?.body?.name)).toMatch(/^crabbox-blue-lobster-/);
   });
 
+  it("boots leases from the configured default machine image", async () => {
+    const client = new GCPClient({ ...env, CRABBOX_GCP_MACHINE_IMAGE: "crabbox-dev-20260828" });
+    (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
+      token: "test-token",
+      expiresAt: Math.trunc(Date.now() / 1000) + 3600,
+    };
+    const calls: Array<{
+      method: string;
+      path: string;
+      body: Record<string, unknown> | undefined;
+    }> = [];
+    client.fetcher = async (input, init) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      const body = init?.body
+        ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+        : undefined;
+      calls.push({ method, path: url.pathname + url.search, body });
+      if (url.pathname.endsWith("/global/firewalls/crabbox-ssh") && method === "GET") {
+        return new Response("not found", { status: 404 });
+      }
+      if (url.pathname.endsWith("/wait")) {
+        return Response.json({ name: "op", status: "DONE" });
+      }
+      if (url.pathname.includes("/zones/us-central1-a/instances/crabbox-blue-lobster-")) {
+        return Response.json({
+          id: "123",
+          name: url.pathname.split("/").pop(),
+          status: "RUNNING",
+          machineType: "zones/us-central1-a/machineTypes/e2-micro",
+          networkInterfaces: [{ accessConfigs: [{ natIP: "192.0.2.5" }] }],
+        });
+      }
+      return Response.json({ name: "op-instance", status: "PENDING" });
+    };
+
+    await client.createServer(
+      leaseConfig({ provider: "gcp", serverType: "e2-micro", sshPublicKey: "ssh-ed25519 test" }),
+      "cbx_123456789abc",
+      "blue-lobster",
+      "alice@example.com",
+    );
+
+    const createCall = calls.find(
+      (call) => call.method === "POST" && call.path.includes("/zones/us-central1-a/instances?"),
+    );
+    expect(createCall?.path).toContain(
+      "sourceMachineImage=projects%2Fdefault-project%2Fglobal%2FmachineImages%2Fcrabbox-dev-20260828",
+    );
+    expect(createCall?.body).not.toHaveProperty("disks");
+  });
+
+  it("sets maxRunDuration from the lease ttl and deletes on expiry", () => {
+    const scheduling = gcpScheduling(
+      leaseConfig({
+        provider: "gcp",
+        serverType: "e2-micro",
+        sshPublicKey: "ssh-ed25519 test",
+        ttlSeconds: 5400,
+        capacity: { market: "on-demand" },
+      }),
+    );
+    expect(scheduling).toEqual({
+      maxRunDuration: { seconds: 5400 },
+      instanceTerminationAction: "DELETE",
+    });
+  });
+
+  it("merges maxRunDuration with spot scheduling", () => {
+    const scheduling = gcpScheduling(
+      leaseConfig({
+        provider: "gcp",
+        serverType: "e2-micro",
+        sshPublicKey: "ssh-ed25519 test",
+        ttlSeconds: 5400,
+        capacity: { market: "spot" },
+      }),
+    );
+    expect(scheduling).toEqual({
+      maxRunDuration: { seconds: 5400 },
+      instanceTerminationAction: "DELETE",
+      provisioningModel: "SPOT",
+      automaticRestart: false,
+      onHostMaintenance: "TERMINATE",
+    });
+  });
+
+  it("skips maxRunDuration outside the supported bounds", () => {
+    expect(gcpMaxRunDurationSeconds(29)).toBe(0);
+    expect(gcpMaxRunDurationSeconds(30)).toBe(30);
+    expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60)).toBe(120 * 24 * 60 * 60);
+    expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60 + 1)).toBe(0);
+  });
+
   it("creates instances from disk snapshots without forcing default disk size", async () => {
     const client = new GCPClient(env);
     (client as unknown as { cache: { token: string; expiresAt: number } }).cache = {
@@ -985,7 +1083,9 @@ describe("gcp provider", () => {
     const createCall = calls.find(
       (call) => call.method === "POST" && call.path.endsWith("/zones/us-central1-a/instances"),
     );
-    const disks = createCall?.body?.disks as Array<{ initializeParams?: Record<string, unknown> }>;
+    const disks = createCall?.body?.disks as Array<{
+      initializeParams?: Record<string, unknown>;
+    }>;
     expect(disks[0]?.initializeParams).toMatchObject({
       sourceSnapshot: "projects/default-project/global/snapshots/checkpoint-gcp",
       diskType: "zones/us-central1-a/diskTypes/pd-balanced",
@@ -1088,5 +1188,27 @@ describe("gcp provider", () => {
         "gcp POST /zones/us-central1-a/instances: http 400: invalid labels",
       ),
     ).toBe(false);
+  });
+});
+
+describe("gcpBootDiskType", () => {
+  it("uses pd-balanced for families that accept Persistent Disk", () => {
+    expect(gcpBootDiskType("e2-micro")).toBe("pd-balanced");
+    expect(gcpBootDiskType("c3-standard-8")).toBe("pd-balanced");
+    expect(gcpBootDiskType("c3d-standard-8")).toBe("pd-balanced");
+    expect(gcpBootDiskType("n2-custom-4-8192")).toBe("pd-balanced");
+    expect(gcpBootDiskType("custom-4-8192")).toBe("pd-balanced");
+    expect(gcpBootDiskType("h3-standard-88")).toBe("pd-balanced");
+  });
+
+  it("uses hyperdisk for families that reject Persistent Disk", () => {
+    expect(gcpBootDiskType("c4-standard-4")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("C4-STANDARD-4")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("c4a-standard-4")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("c4d-standard-8")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("n4-standard-8")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("m4-megamem-56")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("x4-megamem-960")).toBe("hyperdisk-balanced");
+    expect(gcpBootDiskType("z3-highmem-88")).toBe("hyperdisk-balanced");
   });
 });

@@ -76,6 +76,7 @@ export interface Env {
   CRABBOX_GCP_PROJECT?: string;
   CRABBOX_GCP_ZONE?: string;
   CRABBOX_GCP_IMAGE?: string;
+  CRABBOX_GCP_MACHINE_IMAGE?: string;
   CRABBOX_GCP_NETWORK?: string;
   CRABBOX_GCP_SUBNET?: string;
   CRABBOX_GCP_TAGS?: string;
