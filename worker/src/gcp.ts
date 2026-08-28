@@ -358,13 +358,9 @@ export class GCPClient {
         },
       ];
     }
-    if (config.capacityMarket === "spot") {
-      instance["scheduling"] = {
-        provisioningModel: "SPOT",
-        instanceTerminationAction: "DELETE",
-        automaticRestart: false,
-        onHostMaintenance: "TERMINATE",
-      };
+    const scheduling = gcpScheduling(config);
+    if (scheduling) {
+      instance["scheduling"] = scheduling;
     }
     try {
       const path = config.gcpMachineImage
@@ -972,6 +968,35 @@ function canonicalGCPMachine(machine: ProviderMachine): boolean {
     machine.labels["created_by"] === "crabbox" &&
     machine.labels["provider"] === "gcp"
   );
+}
+
+export function gcpMaxRunDurationSeconds(ttlSeconds: number): number {
+  const min = 30;
+  const max = 120 * 24 * 60 * 60;
+  if (!Number.isFinite(ttlSeconds)) {
+    return 0;
+  }
+  const seconds = Math.round(ttlSeconds);
+  if (seconds < min || seconds > max) {
+    return 0;
+  }
+  return seconds;
+}
+
+export function gcpScheduling(config: LeaseConfig): Record<string, unknown> | undefined {
+  const scheduling: Record<string, unknown> = {};
+  const seconds = gcpMaxRunDurationSeconds(config.ttlSeconds);
+  if (seconds > 0) {
+    scheduling["maxRunDuration"] = { seconds };
+    scheduling["instanceTerminationAction"] = "DELETE";
+  }
+  if (config.capacityMarket === "spot") {
+    scheduling["provisioningModel"] = "SPOT";
+    scheduling["instanceTerminationAction"] = "DELETE";
+    scheduling["automaticRestart"] = false;
+    scheduling["onHostMaintenance"] = "TERMINATE";
+  }
+  return Object.keys(scheduling).length > 0 ? scheduling : undefined;
 }
 
 function gcpLabels(labels: Record<string, string>): Record<string, string> {

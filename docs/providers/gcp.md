@@ -22,9 +22,9 @@ Use GCP when:
 - you want Linux Compute Engine capacity behind the shared coordinator;
 - you want direct local testing with Google Application Default Credentials.
 
-GCP is Linux-only. For Windows, WSL2, macOS, Linux desktop/browser/code leases,
-or the AMI-style image bake-and-promote workflow, use AWS instead. GCP does
-support [Tailscale](../features/tailscale.md) and native
+GCP is Linux-only. For Windows, WSL2, or macOS leases, or the AMI-style image
+bake-and-promote workflow, use AWS instead. GCP does support Linux
+desktop/browser/code leases, [Tailscale](../features/tailscale.md), and native
 [checkpoints](../features/checkpoints.md) (machine-image and disk-snapshot
 fork/restore) — see below.
 
@@ -372,8 +372,9 @@ described above.
 
 Three independent safety nets enforce expiry:
 
-- Direct GCP VMs set Compute Engine `maxRunDuration` with termination action
-  `DELETE`, so the TTL hard cap is enforced by the platform.
+- GCP VMs set Compute Engine `maxRunDuration` with termination action `DELETE`
+  in both direct and brokered mode, so the TTL hard cap is enforced by the
+  platform.
 - Each VM installs a guest-side `crabbox-gcp-expiry-guard` systemd timer that
   reads live instance labels through the metadata service and Compute API, then
   self-deletes expired non-kept leases when the attached service account can
@@ -435,8 +436,8 @@ temporary `CRABBOX_CONFIG` without broker settings for direct cleanup.
 
 ## Limitations
 
-- Linux only — no GCP Windows, WSL2, or macOS.
-- No desktop, browser, code-server, or VNC capabilities.
+- Linux only — no GCP Windows, WSL2, or macOS. Desktop, browser, and
+  code-server capabilities are Linux-only as a result.
 - No AWS-style image bake-and-promote pipeline (native checkpoints and
   `image delete` are supported).
 - No provider pricing lookup yet; cost uses the generic managed-provider fallback

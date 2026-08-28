@@ -6,6 +6,8 @@ import {
   gcpEffectiveTags,
   gcpFirewallNameForPolicy,
   gcpFirewallNameForNetwork,
+  gcpMaxRunDurationSeconds,
+  gcpScheduling,
   isFallbackProvisioningError,
   operationDone,
 } from "../src/gcp";
@@ -923,6 +925,48 @@ describe("gcp provider", () => {
     );
     expect(createCall?.body).not.toHaveProperty("disks");
     expect(String(createCall?.body?.name)).toMatch(/^crabbox-blue-lobster-/);
+  });
+
+  it("sets maxRunDuration from the lease ttl and deletes on expiry", () => {
+    const scheduling = gcpScheduling(
+      leaseConfig({
+        provider: "gcp",
+        serverType: "e2-micro",
+        sshPublicKey: "ssh-ed25519 test",
+        ttlSeconds: 5400,
+        capacity: { market: "on-demand" },
+      }),
+    );
+    expect(scheduling).toEqual({
+      maxRunDuration: { seconds: 5400 },
+      instanceTerminationAction: "DELETE",
+    });
+  });
+
+  it("merges maxRunDuration with spot scheduling", () => {
+    const scheduling = gcpScheduling(
+      leaseConfig({
+        provider: "gcp",
+        serverType: "e2-micro",
+        sshPublicKey: "ssh-ed25519 test",
+        ttlSeconds: 5400,
+        capacity: { market: "spot" },
+      }),
+    );
+    expect(scheduling).toEqual({
+      maxRunDuration: { seconds: 5400 },
+      instanceTerminationAction: "DELETE",
+      provisioningModel: "SPOT",
+      automaticRestart: false,
+      onHostMaintenance: "TERMINATE",
+    });
+  });
+
+  it("skips maxRunDuration outside the supported bounds", () => {
+    expect(gcpMaxRunDurationSeconds(29)).toBe(0);
+    expect(gcpMaxRunDurationSeconds(30)).toBe(30);
+    expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60)).toBe(120 * 24 * 60 * 60);
+    expect(gcpMaxRunDurationSeconds(120 * 24 * 60 * 60 + 1)).toBe(0);
   });
 
   it("creates instances from disk snapshots without forcing default disk size", async () => {

@@ -87,7 +87,7 @@ reconnects automatically on transient bridge errors.
 
 ```text
 --id <lease-id-or-slug>     Lease to bridge (also accepted as a positional arg).
---provider hetzner|aws|azure  Provider for the lease (default from config).
+--provider hetzner|aws|azure|gcp  Provider for the lease (default from config).
 --target linux              Lease target OS (code requires linux).
 --network auto|tailscale|public  Network mode used to reach the runner.
 --local-port <port>         Local code-server tunnel port (auto-selected 8081-8180 if unset).

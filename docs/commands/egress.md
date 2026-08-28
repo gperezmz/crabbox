@@ -93,7 +93,7 @@ Common to all subcommands:
 
 ```text
 --id <lease-id-or-slug>          target lease (or first positional arg)
---provider hetzner|aws           coordinator-backed provider (default from config)
+--provider hetzner|aws|azure|gcp  coordinator-backed provider (default from config)
 --coordinator <url>              coordinator URL override
 ```
 
