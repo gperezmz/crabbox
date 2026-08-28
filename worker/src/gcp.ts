@@ -97,6 +97,8 @@ export class GCPClient {
   readonly project: string;
   readonly zone: string;
   readonly image: string;
+  readonly machineImage: string;
+  readonly snapshot: string;
   readonly network: string;
   readonly subnet: string;
   readonly tags: string[];
@@ -115,6 +117,8 @@ export class GCPClient {
       project?.trim() || env.CRABBOX_GCP_PROJECT?.trim() || env.GCP_PROJECT_ID?.trim() || "";
     this.zone = zone || env.CRABBOX_GCP_ZONE?.trim() || "europe-west2-a";
     this.image = env.CRABBOX_GCP_IMAGE?.trim() || defaultImage;
+    this.machineImage = env.CRABBOX_GCP_MACHINE_IMAGE?.trim() || "";
+    this.snapshot = env.CRABBOX_GCP_SNAPSHOT?.trim() || "";
     this.network = env.CRABBOX_GCP_NETWORK?.trim() || "default";
     this.subnet = env.CRABBOX_GCP_SUBNET?.trim() || "";
     this.tags = uniqueStrings((env.CRABBOX_GCP_TAGS ?? "crabbox-ssh").split(","));
@@ -328,14 +332,16 @@ export class GCPClient {
         },
       ],
     };
-    if (!config.gcpMachineImage) {
-      const initializeParams: Record<string, unknown> = config.gcpSnapshot
-        ? { sourceSnapshot: gcpSnapshotRef(config.gcpSnapshot, project) }
+    const machineImage = config.gcpMachineImage || this.machineImage;
+    const snapshot = config.gcpSnapshot || this.snapshot;
+    if (!machineImage) {
+      const initializeParams: Record<string, unknown> = snapshot
+        ? { sourceSnapshot: gcpSnapshotRef(snapshot, project) }
         : {
             sourceImage: config.gcpImage || this.image,
             diskSizeGb: config.gcpRootGB || this.rootGB,
           };
-      if (config.gcpSnapshot && config.gcpRootGB > 0) {
+      if (snapshot && config.gcpRootGB > 0) {
         initializeParams["diskSizeGb"] = config.gcpRootGB;
       }
       instance["disks"] = [
@@ -345,7 +351,7 @@ export class GCPClient {
           type: "PERSISTENT",
           initializeParams: {
             ...initializeParams,
-            diskType: `zones/${this.zone}/diskTypes/pd-balanced`,
+            diskType: `zones/${this.zone}/diskTypes/${gcpBootDiskType(config.serverType)}`,
           },
         },
       ];
@@ -358,17 +364,13 @@ export class GCPClient {
         },
       ];
     }
-    if (config.capacityMarket === "spot") {
-      instance["scheduling"] = {
-        provisioningModel: "SPOT",
-        instanceTerminationAction: "DELETE",
-        automaticRestart: false,
-        onHostMaintenance: "TERMINATE",
-      };
+    const scheduling = gcpScheduling(config);
+    if (scheduling) {
+      instance["scheduling"] = scheduling;
     }
     try {
-      const path = config.gcpMachineImage
-        ? `/zones/${this.zone}/instances?sourceMachineImage=${encodeURIComponent(gcpMachineImageRef(config.gcpMachineImage, project))}`
+      const path = machineImage
+        ? `/zones/${this.zone}/instances?sourceMachineImage=${encodeURIComponent(gcpMachineImageRef(machineImage, project))}`
         : `/zones/${this.zone}/instances`;
       const op = await this.gcp<GCPOperation>("POST", path, instance);
       await this.waitZoneOperation(op);
@@ -461,6 +463,7 @@ export class GCPClient {
       name,
       sourceInstance: `zones/${this.zone}/instances/${instanceName}`,
       description: `Crabbox checkpoint from ${instanceName}`,
+      labels: { crabbox: "true", managed_by: "crabbox" },
     });
     await this.waitGlobalOperation(op);
     return await this.getImage(name);
@@ -972,6 +975,67 @@ function canonicalGCPMachine(machine: ProviderMachine): boolean {
     machine.labels["created_by"] === "crabbox" &&
     machine.labels["provider"] === "gcp"
   );
+}
+
+// Machine families that accept Persistent Disk. Newer families (C4, C4A, C4D, N4,
+// M4, X4, Z3, A4 and everything after them) reject pd-balanced and need Hyperdisk,
+// so anything not listed here defaults to hyperdisk-balanced.
+const gcpPersistentDiskFamilies = new Set([
+  "custom",
+  "f1",
+  "g1",
+  "e2",
+  "n1",
+  "n2",
+  "n2d",
+  "c2",
+  "c2d",
+  "c3",
+  "c3d",
+  "t2a",
+  "t2d",
+  "m1",
+  "m2",
+  "m3",
+  "a2",
+  "a3",
+  "g2",
+  "g4",
+  "h3",
+]);
+
+export function gcpBootDiskType(machineType: string): string {
+  const family = machineType.toLowerCase().split("-")[0] ?? "";
+  return gcpPersistentDiskFamilies.has(family) ? "pd-balanced" : "hyperdisk-balanced";
+}
+
+export function gcpMaxRunDurationSeconds(ttlSeconds: number): number {
+  const min = 30;
+  const max = 120 * 24 * 60 * 60;
+  if (!Number.isFinite(ttlSeconds)) {
+    return 0;
+  }
+  const seconds = Math.round(ttlSeconds);
+  if (seconds < min || seconds > max) {
+    return 0;
+  }
+  return seconds;
+}
+
+export function gcpScheduling(config: LeaseConfig): Record<string, unknown> | undefined {
+  const scheduling: Record<string, unknown> = {};
+  const seconds = gcpMaxRunDurationSeconds(config.ttlSeconds);
+  if (seconds > 0) {
+    scheduling["maxRunDuration"] = { seconds };
+    scheduling["instanceTerminationAction"] = "DELETE";
+  }
+  if (config.capacityMarket === "spot") {
+    scheduling["provisioningModel"] = "SPOT";
+    scheduling["instanceTerminationAction"] = "DELETE";
+    scheduling["automaticRestart"] = false;
+    scheduling["onHostMaintenance"] = "TERMINATE";
+  }
+  return Object.keys(scheduling).length > 0 ? scheduling : undefined;
 }
 
 function gcpLabels(labels: Record<string, string>): Record<string, string> {

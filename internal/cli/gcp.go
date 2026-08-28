@@ -212,7 +212,7 @@ func (c *GCPClient) createServer(ctx context.Context, cfg Config, publicKey, lea
 			InitializeParams: &computepb.AttachedDiskInitializeParams{
 				SourceImage: proto.String(c.Image),
 				DiskSizeGb:  proto.Int64(c.RootGB),
-				DiskType:    proto.String(fmt.Sprintf("zones/%s/diskTypes/pd-balanced", c.Zone)),
+				DiskType:    proto.String(fmt.Sprintf("zones/%s/diskTypes/%s", c.Zone, gcpBootDiskType(cfg.ServerType))),
 			},
 		}},
 		NetworkInterfaces: []*computepb.NetworkInterface{{
@@ -725,4 +725,40 @@ func uniqueStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+// gcpPersistentDiskFamilies lists the machine families that accept Persistent Disk.
+// Newer families (C4, C4A, C4D, N4, M4, X4, Z3, A4 and everything after them) reject
+// pd-balanced and need Hyperdisk, so anything not listed here uses hyperdisk-balanced.
+var gcpPersistentDiskFamilies = map[string]bool{
+	"custom": true,
+	"f1":     true,
+	"g1":     true,
+	"e2":     true,
+	"n1":     true,
+	"n2":     true,
+	"n2d":    true,
+	"c2":     true,
+	"c2d":    true,
+	"c3":     true,
+	"c3d":    true,
+	"t2a":    true,
+	"t2d":    true,
+	"m1":     true,
+	"m2":     true,
+	"m3":     true,
+	"a2":     true,
+	"a3":     true,
+	"g2":     true,
+	"g4":     true,
+	"h3":     true,
+}
+
+// gcpBootDiskType picks a boot disk type the machine family accepts.
+func gcpBootDiskType(machineType string) string {
+	family, _, _ := strings.Cut(strings.ToLower(machineType), "-")
+	if gcpPersistentDiskFamilies[family] {
+		return "pd-balanced"
+	}
+	return "hyperdisk-balanced"
 }
