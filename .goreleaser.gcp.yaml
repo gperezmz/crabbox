@@ -1,0 +1,26 @@
+# Fork-only release of the CLI (GCP desktop patch). Triggered by tags v*-gcp.*
+version: 2
+project_name: crabbox
+changelog:
+  disable: true
+release:
+  prerelease: auto
+  name_template: "crabbox {{ .Version }} (GCP desktop patch)"
+builds:
+  - id: crabbox
+    main: ./cmd/crabbox
+    binary: crabbox
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w -X github.com/openclaw/crabbox/internal/cli.version={{ .Version }}
+    targets: [darwin_amd64, darwin_arm64, linux_amd64, linux_arm64]
+archives:
+  - id: crabbox
+    ids: [crabbox]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [none*]
+checksum:
+  name_template: checksums.txt
